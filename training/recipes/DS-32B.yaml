@@ -1,0 +1,47 @@
+# Model arguments
+# Model arguments
+model_name_or_path: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+model_revision: main
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+scale_type: log
+encoder_type: bert
+length: 8192
+
+# Data training arguments
+dataset_name: open-r1/OpenR1-Math-220k
+dataset_config: all
+dataset_num_proc: 48
+
+# SFT trainer config
+bf16: true
+do_eval: false
+eval_strategy: 'no'
+gradient_accumulation_steps: 1
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+learning_rate: 1.0e-04
+log_level: info
+logging_steps: 10
+logging_strategy: steps
+lr_scheduler_type: constant_with_warmup
+lr_scheduler_kwargs:
+  min_lr_rate: 0.1
+packing: false
+max_length: 100000000000000000000
+max_steps: -1
+num_train_epochs: 1
+output_dir: output/DS-32B
+overwrite_output_dir: true
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+push_to_hub: false
+report_to:
+- wandb
+save_strategy: "steps"
+save_steps: 2000
+save_total_limit: 2
+seed: 42
+use_liger: false
+warmup_ratio: 0.05
