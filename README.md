@@ -1,63 +1,131 @@
-# Budget Guidance
+# Steering LLM Thinking with Budget Guidance
+
+[[Demo](YOUR_DEMO_LINK)] [[Paper](https://arxiv.org/abs/2506.xxxxx)] [[Hugging Face Models](https://huggingface.co/collections/senfu/budget-guidance-6844426427e777c8bc04a5ce)]
+
+
+![method](figures/method.jpg)
+
+This repository contains the official code for **Budget Guidance**, a lightweight, plug-and-play method for controlling the reasoning length of large language models (LLMs).  
+It enables **thinking-budget-controllable** inference without requiring any fine-tuning of the LLM itself, and achieves strong performance on a range of reasoning benchmarks.
+
+
+## Table of Contents
+
+- [Overview](#overview)
+- [News](#news)
+- [Installation](#installation)
+- [Model Checkpoints](#model-checkpoints)
+- [Training](#training)
+  - [Data Augmentation](#data-augmentation)
+  - [Train the Predictor](#train-the-predictor)
+- [Evaluation](#evaluation)
+- [Acknowledgement](#acknowledgement)
+- [Citation](#citation)
+- [License](#license)
+- [Contributing](#contributing)
+
+
+## News
+
+* June 2025: Code and model checkpoints released.
+* June 2025: Paper released on arXiv.
 
 
 ## Installation
 
-```python
+```bash
+# Create environment
 conda create -n bg python=3.10
 conda activate bg
+
+# Install dependencies
 pip install torch
 pip install flash-attn --no-build-isolation
+
+# Install modified transformers
 cd 3rdparty/transformers && pip install -e .
+
 # For training
 cd training && pip install -e .
 cd 3rdparty/trl && pip install -e .
+
 # For evaluation
 cd evaluation/lm-evaluation-harness && pip install -e .[math,vllm]
 ```
 
+## Model Checkpoints
+
+| Model | Link |
+|-------|------|
+| DeepSeek-R1-Distill-Qwen-7B | [🤗 Hugging Face](https://huggingface.co/senfu/DeepSeek-R1-Distill-Qwen-7B-BG) |
+| DeepSeek-R1-Distill-Qwen-32B | [🤗 Hugging Face](https://huggingface.co/senfu/DeepSeek-R1-Distill-Qwen-32B) |
+| Qwen3-8B-BG | [🤗 Hugging Face](https://huggingface.co/senfu/Qwen3-8B-BG) |
+
 
 ## Training
 
-First, apply the data augmentation technique mentioned in the paper:
+### Data Augmentation
 
-```python
+First, apply the data augmentation technique described in our paper:
+
+```bash
 cd training
 python run_data_augmentation.py
 ```
 
-Then, train the predictor:
+### Train the Predictor
+Then, start training:
 
-```python
+```bash
 bash train.sh
 ```
 
+
 ## Evaluation
 
-We use [lm_eval](https://github.com/EleutherAI/lm-evaluation-harness) as our evaluation codebase. Also, we use Azure OpenAI API to provide LLM as the evaluation judge. For example, to evaluate DeepSeek-R1-Distill-Qwen-7B model on MATH-500 with a thinking budget of 1000, simple run:
+We use [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) as the evaluation framework.  
+For evaluating reasoning quality under a thinking budget, we employ an external LLM (e.g., Azure OpenAI GPT-4o-mini) as the judge.
 
-```python
+Example: to evaluate **DeepSeek-R1-Distill-Qwen-7B** on **MATH-500** with a thinking budget of 1000 tokens:
+
+```bash
 cd evaluation
 export MODEL_PATH=senfu/DeepSeek-R1-Distill-Qwen-7B-BG
 export TOKENIZER=deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
 export THINKING_BUDGET=1000
+
+# Azure OpenAI API setup
 export API_KEY_NAME=YOUR_AZURE_OPENAI_API
 export API_ENDPOINT=YOUR_AZURE_API_ENDPOINT
 export PROCESSOR=gpt-4o-mini
-accelerate launch -m lm_eval --model hf --model_args pretrained=$MODEL_PATH,tokenizer=$TOKENIZER,dtype=bfloat16 --seed 0 --tasks openai_math --batch_size 1 --apply_chat_template --output_path results --log_samples --gen_kwargs "max_gen_toks=32768,token_budget=$THINKING_BUDGET"
+
+# Run evaluation
+accelerate launch -m lm_eval \
+    --model hf \
+    --model_args pretrained=$MODEL_PATH,tokenizer=$TOKENIZER,dtype=bfloat16 \
+    --seed 0 \
+    --tasks openai_math \
+    --batch_size 1 \
+    --apply_chat_template \
+    --output_path results \
+    --log_samples \
+    --gen_kwargs "max_gen_toks=32768,token_budget=$THINKING_BUDGET"
 ```
+
 
 ## Acknowledgement
 
-[s1](https://github.com/simplescaling/s1): We adapt their codebase for evaluation.
+We gratefully acknowledge the following open-source projects:
 
-[open-r1](https://github.com/huggingface/open-r1) We adapt their codebase for training.
+- [s1](https://github.com/simplescaling/s1): Evaluation codebase adaptation.
+- [open-r1](https://github.com/huggingface/open-r1): Training codebase adaptation.
+
 
 ## Citation
 
-If our work is useful or relevant to your research, please kindly recognize our contributions by citing our paper:
+If you find our work helpful, please consider citing:
 
-```
+```bibtex
 @misc{li2025budgetguidance,
   title        = {Steering LLM Thinking with Budget Guidance},
   author       = {Junyan Li and Wenshuo Zhao and Yang Zhang and Chuang Gan},
@@ -68,3 +136,14 @@ If our work is useful or relevant to your research, please kindly recognize our 
   url          = {https://arxiv.org/abs/2506.xxxxx}
 }
 ```
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+
+## Contributing
+
+We welcome contributions to Budget Guidance!  
+If you have suggestions, bug reports, or would like to contribute improvements, feel free to open an issue or submit a pull request.
+
