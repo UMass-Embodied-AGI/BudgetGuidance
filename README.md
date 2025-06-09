@@ -57,7 +57,7 @@ cd evaluation/lm-evaluation-harness && pip install -e .[math,vllm]
 | Model | Link |
 |-------|------|
 | DeepSeek-R1-Distill-Qwen-7B | [🤗 Hugging Face](https://huggingface.co/senfu/DeepSeek-R1-Distill-Qwen-7B-BG) |
-| DeepSeek-R1-Distill-Qwen-32B | [🤗 Hugging Face](https://huggingface.co/senfu/DeepSeek-R1-Distill-Qwen-32B) |
+| DeepSeek-R1-Distill-Qwen-32B | [🤗 Hugging Face](https://huggingface.co/senfu/DeepSeek-R1-Distill-Qwen-32B-BG) |
 | Qwen3-8B-BG | [🤗 Hugging Face](https://huggingface.co/senfu/Qwen3-8B-BG) |
 
 
