@@ -11,7 +11,6 @@ It enables **thinking-budget-controllable** inference without requiring any fine
 
 ## Table of Contents
 
-- [Overview](#overview)
 - [News](#news)
 - [Installation](#installation)
 - [Model Checkpoints](#model-checkpoints)
