@@ -5,8 +5,9 @@
 
 ![method](figures/method.jpg)
 
-This repository contains the official code for **Budget Guidance**, a lightweight, plug-and-play method for controlling the reasoning length of large language models (LLMs).  
-It enables **thinking-budget-controllable** inference without requiring any fine-tuning of the LLM itself, and achieves strong performance on a range of reasoning benchmarks.
+This repository contains the official code for **Budget Guidance**, a lightweight and non-invasive method for controlling the reasoning length of large language models (LLMs). It enables **budget-conditioned** generation without fine-tuning the LLM, and achieves strong performance across a wide range of reasoning benchmarks.
+
+
 
 
 ## Table of Contents
