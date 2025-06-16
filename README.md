@@ -1,6 +1,6 @@
 # Steering LLM Thinking with Budget Guidance
 
-[[Demo](https://fd893b0a5bce738bd6.gradio.live)] [[Paper](https://arxiv.org/abs/2506.xxxxx)] [[Hugging Face Models](https://huggingface.co/collections/senfu/budget-guidance-6844426427e777c8bc04a5ce)]
+[[Demo](https://480108443744964fa7.gradio.live)] [[Paper](https://arxiv.org/abs/2506.xxxxx)] [[Hugging Face Models](https://huggingface.co/collections/senfu/budget-guidance-6844426427e777c8bc04a5ce)]
 
 
 ![method](figures/method.jpg)
