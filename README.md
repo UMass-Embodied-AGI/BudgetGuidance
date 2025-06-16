@@ -7,14 +7,11 @@
 
 This repository contains the official code for **Budget Guidance**, a lightweight and non-invasive method for controlling the reasoning length of large language models (LLMs). It enables **budget-conditioned** generation without fine-tuning the LLM, and achieves strong performance across a wide range of reasoning benchmarks. 👉 **[Try our demo!](#)** 🚀
 
-
-
-
-
 ## Table of Contents
 
 - [News](#news)
 - [Installation](#installation)
+- [Quick Start](#quick-start)
 - [Model Checkpoints](#model-checkpoints)
 - [Training](#training)
   - [Data Augmentation](#data-augmentation)
@@ -54,13 +51,60 @@ cd 3rdparty/trl && pip install -e .
 cd evaluation/lm-evaluation-harness && pip install -e .[math,vllm]
 ```
 
+
+## Quick Start
+
+Our method is seamlessly integrated into our modified version of the 🤗 Transformers library: simply specify the `token_budget` argument when calling `model.generate()`.
+
+
+
+```python
+import transformers
+import torch
+model = transformers.AutoModelForCausalLM.from_pretrained(
+  "senfu/DeepSeek-R1-Distill-Qwen-7B-BG",
+  torch_dtype=torch.bfloat16,
+  attn_implementation="flash_attention_2",
+)
+tokenizer = transformers.AutoTokenizer.from_pretrained(
+  "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+)
+prompt = "Jen enters a lottery by picking $4$ distinct numbers from $S=\\{1,2,3,\\cdots,9,10\\}.$ $4$ numbers are randomly chosen from $S.$ She wins a prize if at least two of her numbers were $2$ of the randomly chosen numbers, and wins the grand prize if all four of her numbers were the randomly chosen numbers. The probability of her winning the grand prize given that she won a prize is $\\tfrac{m}{n}$ where $m$ and $n$ are relatively prime positive integers. Find $m+n$."
+
+messages = [
+    {"role": "user", "content": prompt}
+]
+text = tokenizer.apply_chat_template(
+    messages,
+    tokenize=False,
+    add_generation_prompt=True,
+)
+model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+
+model.eval()
+with torch.no_grad():
+  # conduct text completion
+  generated_ids = model.generate(
+      **model_inputs,
+      do_sample=False,
+      max_new_tokens=32768,
+      token_budget=500,  # add this to define a thinking token budget
+  )
+output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+print(tokenizer.decode(output_ids, skip_special_tokens=True))
+
+```
+
 ## Model Checkpoints
+
+The model checkpoints, including the trained predictor, are provided below.
+
 
 | Model | Link |
 |-------|------|
 | DeepSeek-R1-Distill-Qwen-7B | [🤗 Hugging Face](https://huggingface.co/senfu/DeepSeek-R1-Distill-Qwen-7B-BG) |
 | DeepSeek-R1-Distill-Qwen-32B | [🤗 Hugging Face](https://huggingface.co/senfu/DeepSeek-R1-Distill-Qwen-32B-BG) |
-| Qwen3-8B-BG | [🤗 Hugging Face](https://huggingface.co/senfu/Qwen3-8B-BG) |
+| Qwen3-8B | [🤗 Hugging Face](https://huggingface.co/senfu/Qwen3-8B-BG) |
 
 
 ## Training
