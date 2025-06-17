@@ -1,6 +1,6 @@
 # Steering LLM Thinking with Budget Guidance
 
-[[Demo](https://8fbedd31e601065d7a.gradio.live)] [[Paper](https://arxiv.org/abs/2506.xxxxx)] [[Hugging Face Models](https://huggingface.co/collections/senfu/budget-guidance-6844426427e777c8bc04a5ce)]
+[[Demo](https://8fbedd31e601065d7a.gradio.live)] [[Paper](https://arxiv.org/pdf/2506.13752)] [[Hugging Face Models](https://huggingface.co/collections/senfu/budget-guidance-6844426427e777c8bc04a5ce)]
 
 
 ![method](figures/method.jpg)
@@ -172,13 +172,13 @@ If you find our work helpful, please consider citing:
 
 ```bibtex
 @misc{li2025budgetguidance,
-  title        = {Steering LLM Thinking with Budget Guidance},
-  author       = {Junyan Li and Wenshuo Zhao and Yang Zhang and Chuang Gan},
-  year         = {2025},
-  eprint       = {2506.xxxxx},
-  archivePrefix= {arXiv},
-  primaryClass = {cs.CL},
-  url          = {https://arxiv.org/abs/2506.xxxxx}
+      title={Steering LLM Thinking with Budget Guidance}, 
+      author={Junyan Li and Wenshuo Zhao and Yang Zhang and Chuang Gan},
+      year={2025},
+      eprint={2506.13752},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2506.13752}, 
 }
 ```
 
