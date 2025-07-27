@@ -1,11 +1,11 @@
 # Steering LLM Thinking with Budget Guidance
 
-[[Demo](https://4e2b915b23730402a0.gradio.live)] [[Paper](https://arxiv.org/pdf/2506.13752)] [[Hugging Face Models](https://huggingface.co/collections/senfu/budget-guidance-6844426427e777c8bc04a5ce)]
+[[Demo](https://9bc4f387c93a76d088.gradio.live)] [[Paper](https://arxiv.org/pdf/2506.13752)] [[Hugging Face Models](https://huggingface.co/collections/senfu/budget-guidance-6844426427e777c8bc04a5ce)]
 
 
 ![method](figures/method.jpg)
 
-This repository contains the official code for **Budget Guidance**, a lightweight and non-invasive method for controlling the reasoning length of large language models (LLMs). It enables **budget-conditioned** generation without fine-tuning the LLM, and achieves strong performance across a wide range of reasoning benchmarks. 👉 **[Try our demo!](https://4e2b915b23730402a0.gradio.live)** 🚀
+This repository contains the official code for **Budget Guidance**, a lightweight and non-invasive method for controlling the reasoning length of large language models (LLMs). It enables **budget-conditioned** generation without fine-tuning the LLM, and achieves strong performance across a wide range of reasoning benchmarks. 👉 **[Try our demo!](https://9bc4f387c93a76d088.gradio.live)** 🚀
 
 ## Table of Contents
 
