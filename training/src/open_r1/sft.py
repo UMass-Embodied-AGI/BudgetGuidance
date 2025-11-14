@@ -110,10 +110,6 @@ def main(script_args, training_args, model_args, my_args):
     ################
     dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
     train_dataset = dataset[script_args.dataset_train_split]
-    dataset2 = load_from_disk("datasets/OpenR1-Math-220k-concise")
-    train_dataset = datasets.concatenate_datasets([dataset[script_args.dataset_train_split], dataset2[script_args.dataset_train_split]])
-    # shuffle
-    train_dataset = train_dataset.shuffle(seed=training_args.seed)
 
     ################
     # Load tokenizer
