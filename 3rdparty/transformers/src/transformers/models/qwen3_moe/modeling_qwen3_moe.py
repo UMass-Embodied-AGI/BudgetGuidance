@@ -21,10 +21,12 @@
 
 from functools import partial
 from typing import Callable, List, Optional, Tuple, Union
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.distributions import Gamma
 
 from ...activations import ACT2FN
 from ...cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
@@ -39,6 +41,7 @@ from ...modeling_outputs import (
     QuestionAnsweringModelOutput,
     SequenceClassifierOutputWithPast,
     TokenClassifierOutput,
+    ModelOutput,
 )
 from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
@@ -54,12 +57,64 @@ from ...utils import (
 )
 from ...utils.deprecation import deprecate_kwarg
 from .configuration_qwen3_moe import Qwen3MoeConfig
+from transformers import BertConfig, BertModel
 
 
 logger = logging.get_logger(__name__)
 
 _CHECKPOINT_FOR_DOC = "Qwen/Qwen3-MoE-15B-A2B"
 _CONFIG_FOR_DOC = "Qwen3MoeConfig"
+
+
+@dataclass
+class MoeCausalLMOutputWithPastExtended(ModelOutput):
+    """
+    Base class for MoE causal language model (or autoregressive) outputs with extended fields for alpha and lam.
+
+    Args:
+        loss (`torch.FloatTensor` of shape `(1,)`, *optional*, returned when `labels` is provided):
+            Language modeling loss (for next-token prediction).
+        logits (`torch.FloatTensor` of shape `(batch_size, sequence_length, config.vocab_size)`):
+            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
+        past_key_values (`tuple(tuple(torch.FloatTensor))`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
+            Tuple of `tuple(torch.FloatTensor)` of length `config.n_layers`, with each tuple having 2 tensors of shape
+            `(batch_size, num_heads, sequence_length, embed_size_per_head)`)
+
+            Contains pre-computed hidden-states (key and values in the self-attention blocks) that can be used (see
+            `past_key_values` input) to speed up sequential decoding.
+        hidden_states (`tuple(torch.FloatTensor)`, *optional*, returned when `output_hidden_states=True` is passed or when `config.output_hidden_states=True`):
+            Tuple of `torch.FloatTensor` (one for the output of the embeddings, if the model has an embedding layer, +
+            one for the output of each layer) of shape `(batch_size, sequence_length, hidden_size)`.
+
+            Hidden-states of the model at the output of each layer plus the optional initial embedding outputs.
+        attentions (`tuple(torch.FloatTensor)`, *optional*, returned when `output_attentions=True` is passed or when `config.output_attentions=True`):
+            Tuple of `torch.FloatTensor` (one for each layer) of shape `(batch_size, num_heads, sequence_length,
+            sequence_length)`.
+
+            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
+            heads.
+        router_logits (`tuple(torch.FloatTensor)`, *optional*, returned when `output_router_logits=True` is passed or when `config.output_router_logits=True`):
+            Tuple of `torch.FloatTensor` (one for each layer) of shape `(batch_size, sequence_length, num_experts)`.
+        alpha (`torch.FloatTensor`, *optional*):
+            Alpha parameters for the gamma distribution.
+        lam (`torch.FloatTensor`, *optional*):
+            Lambda parameters for the gamma distribution.
+        pred_abs_error (`torch.FloatTensor`, *optional*):
+            Predicted absolute error.
+        pred_prob (`torch.FloatTensor`, *optional*):
+            Predicted probability.
+    """
+    loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+    attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
+    router_logits: Optional[Tuple[torch.FloatTensor, ...]] = None
+    aux_loss: Optional[torch.FloatTensor] = None
+    alpha: Optional[torch.FloatTensor] = None
+    lam: Optional[torch.FloatTensor] = None
+    pred_abs_error: Optional[torch.FloatTensor] = None
+    pred_prob: Optional[torch.FloatTensor] = None
 
 
 def rotate_half(x):
@@ -957,6 +1012,25 @@ class Qwen3MoeForCausalLM(Qwen3MoePreTrainedModel, GenerationMixin):
         self.num_experts = config.num_experts
         self.num_experts_per_tok = config.num_experts_per_tok
 
+
+        self.encoder_type = "bert"
+        if self.encoder_type == "bert":
+            bert_config = BertConfig()
+            self.encoder = nn.Sequential(
+                nn.Linear(config.hidden_size, bert_config.hidden_size),
+                BertModel(bert_config).encoder,
+            )
+            self.cls_token = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
+            input_size = bert_config.hidden_size
+            # input_size = config.hidden_size
+        elif self.encoder_type == "linear":
+            input_size = config.hidden_size
+        self.alpha_head = nn.Linear(input_size, config.vocab_size, bias=False)
+        self.lam_head = nn.Linear(input_size, config.vocab_size, bias=False)
+
+
+
+
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -977,6 +1051,51 @@ class Qwen3MoeForCausalLM(Qwen3MoePreTrainedModel, GenerationMixin):
 
     def get_decoder(self):
         return self.model
+
+    def encode_budget(self, Lt, scale_type, max_value=None):
+        if scale_type == "log":
+            Lt = torch.log(Lt + 1.0)
+        elif scale_type == "linear":
+            Lt = Lt / 1024.0
+        elif scale_type == "sqrt":
+            Lt = torch.sqrt(Lt)
+        elif scale_type == "origin":
+            Lt = Lt
+        elif scale_type == "adaptive":
+            raise NotImplementedError
+            Lt = torch.log(Lt + 1.0) / torch.log(max_value + 1.0)
+        else:
+            raise NotImplementedError
+        return Lt
+
+    def decode_budget(self, Lt, scale_type, max_value=None):
+        if scale_type == "log":
+            Lt = torch.exp(Lt) - 1.0
+        elif scale_type == "linear":
+            Lt = Lt * 1024.0
+        elif scale_type == "sqrt":
+            Lt = Lt ** 2
+        elif scale_type == "origin":
+            Lt = Lt
+        elif scale_type == "adaptive":
+            raise NotImplementedError
+            Lt = torch.exp(Lt * torch.log(max_value + 1.0)) - 1.0
+        else:
+            raise NotImplementedError
+        return Lt
+
+    def gamma_length_prob(self, L, alpha, lambd, scale_type, interval=10, max_value=None):
+        if interval == -1:
+            L = self.encode_budget(L, scale_type, max_value=max_value)
+            gamma_dist = Gamma(alpha, lambd)
+            return gamma_dist.cdf(L)
+        else:
+            L_plus = self.encode_budget(L + interval, scale_type, max_value=max_value)
+            L_minus = self.encode_budget(L, scale_type, max_value=max_value)
+            gamma_dist = Gamma(alpha, lambd)
+            cdf_L_plus = gamma_dist.cdf(L_plus)
+            cdf_L_minus = gamma_dist.cdf(L_minus)
+            return cdf_L_plus - cdf_L_minus
 
     @can_return_tuple
     @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
@@ -1029,7 +1148,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePreTrainedModel, GenerationMixin):
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
-
+        assert input_ids.shape[0] == 1, "current implementation only supports batch size = 1"
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_router_logits = (
             output_router_logits if output_router_logits is not None else self.config.output_router_logits
@@ -1039,50 +1158,125 @@ class Qwen3MoeForCausalLM(Qwen3MoePreTrainedModel, GenerationMixin):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
 
-        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        outputs: MoeModelOutputWithPast = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            output_router_logits=output_router_logits,
-            cache_position=cache_position,
-            **kwargs,
-        )
-
-        hidden_states = outputs.last_hidden_state
-        # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
-
-        loss = None
-        if labels is not None:
-            loss = self.loss_function(logits, labels, self.vocab_size, **kwargs)
-
-        aux_loss = None
-        if output_router_logits:
-            aux_loss = load_balancing_loss_func(
-                outputs.router_logits,
-                self.num_experts,
-                self.num_experts_per_tok,
-                attention_mask,
+        with torch.no_grad():
+            # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+            outputs: MoeModelOutputWithPast = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=True,
+                output_router_logits=output_router_logits,
+                cache_position=cache_position,
+                **kwargs,
             )
-            if labels is not None:
-                loss += self.router_aux_loss_coef * aux_loss.to(loss.device)  # make sure to reside in the same device
 
-        return MoeCausalLMOutputWithPast(
-            loss=loss,
-            aux_loss=aux_loss,
-            logits=logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            router_logits=outputs.router_logits,
-        )
+            hidden_states = outputs.last_hidden_state
+            # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
+            slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+            logits = self.lm_head(hidden_states[:, slice_indices, :])
+
+        if self.training:
+            total_length = kwargs["total_length"]
+            think_start_idx = kwargs.get("think_start_idx", None)
+            think_end_idx = kwargs.get("think_end_idx", None)
+            if self.encoder_type == "bert":
+                all_last_hidden_states = torch.cat([x.unsqueeze(2) for x in outputs.hidden_states], dim=2)
+                B, S, N_LAYER, DIM = all_last_hidden_states.shape
+                all_last_hidden_states = all_last_hidden_states.flatten(0, 1)
+                cls_tokens = self.cls_token.expand(all_last_hidden_states.size(0), -1, -1)
+                all_last_hidden_states = torch.cat((cls_tokens, all_last_hidden_states), dim=1)
+                all_last_hidden_states = self.encoder(all_last_hidden_states).last_hidden_state
+                hidden_states = all_last_hidden_states[:, 0]
+                hidden_states = hidden_states.unflatten(0, (B, S))
+
+            alpha = self.alpha_head(hidden_states[:, slice_indices, :]).float()
+            lam = self.lam_head(hidden_states[:, slice_indices, :]).float()
+            alpha = torch.nn.functional.softplus(alpha)
+            lam = torch.nn.functional.softplus(lam)
+            shifted_labels = labels[:, 1:].contiguous().clone()
+            shifted_labels[:,-1] = input_ids[:, -1]
+            shifted_labels[0, :think_start_idx] = -100
+            shifted_labels[0, think_end_idx+1:] = -100
+            select_mask = shifted_labels != -100
+            select_shifted_labels = shifted_labels[select_mask]
+            alpha = alpha[:, :-1].contiguous()
+            lam = lam[:, :-1].contiguous()
+            alpha = alpha[select_mask]
+            lam = lam[select_mask]
+            alpha = torch.gather(alpha, -1, select_shifted_labels.unsqueeze(-1)).flatten(-2)
+            lam = torch.gather(lam, -1, select_shifted_labels.unsqueeze(-1)).flatten(-2)
+            Lt = torch.arange(total_length, 1, -1) - 1
+            Lt = Lt[think_start_idx:think_end_idx+1].to(input_ids.device).float()
+            Lt = Lt - Lt.min() + 1
+            Lt = Lt[: alpha.shape[0]]
+            Lt_max = Lt.max()
+            # print(Lt[0], Lt[-1])
+            Lt = self.encode_budget(Lt, self.scale_type, max_value=Lt_max)
+            term1 = alpha * torch.log(lam)
+            term2 = -torch.special.gammaln(alpha)
+            term3 = (alpha - 1) * torch.log(Lt)
+            term4 = -lam * Lt
+            log_likelihood = term1 + term2 + term3 + term4
+            loss = torch.nanmean(-log_likelihood)
+
+            alpha = alpha.detach()
+            lam = lam.detach()
+            Lt = Lt.detach()
+            # expectation for gamma distribution: E[X] = (alpha-1) / lam
+            pred_lengths = self.decode_budget((alpha-1) / lam, self.scale_type, max_value=Lt_max)
+            gt_lengths = self.decode_budget(Lt, self.scale_type, max_value=Lt_max)
+            pred_abs_error = torch.abs(pred_lengths.double() - gt_lengths.double())
+            pred_prob = self.gamma_length_prob(gt_lengths, alpha, lam, self.scale_type, max_value=Lt_max)
+
+            return MoeCausalLMOutputWithPastExtended(
+                loss=loss,
+                aux_loss=None,
+                logits=logits,
+                past_key_values=outputs.past_key_values,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+                router_logits=outputs.router_logits,
+                pred_abs_error=pred_abs_error,
+                pred_prob=pred_prob,
+            )
+        else:
+            apply_budget = kwargs.get("apply_budget", False)
+            if apply_budget:
+                if self.encoder_type == "bert":
+                    all_last_hidden_states = torch.cat([x.unsqueeze(2) for x in outputs.hidden_states], dim=2)
+                    B, S, N_LAYER, DIM = all_last_hidden_states.shape
+                    all_last_hidden_states = all_last_hidden_states.flatten(0, 1)
+                    cls_tokens = self.cls_token.expand(all_last_hidden_states.size(0), -1, -1)
+                    all_last_hidden_states = torch.cat((cls_tokens, all_last_hidden_states), dim=1)
+                    all_last_hidden_states = self.encoder(all_last_hidden_states).last_hidden_state
+                    hidden_states = all_last_hidden_states[:, 0]
+                    hidden_states = hidden_states.unflatten(0, (B, S))
+                alpha = self.alpha_head(hidden_states[:, slice_indices, :]).float()
+                lam = self.lam_head(hidden_states[:, slice_indices, :]).float()
+                alpha = torch.nn.functional.softplus(alpha).detach().flatten()
+                lam = torch.nn.functional.softplus(lam).detach().flatten()
+            else:
+                alpha = None
+                lam = None
+
+            loss = None
+            aux_loss = None
+
+            return MoeCausalLMOutputWithPastExtended(
+                loss=loss,
+                aux_loss=aux_loss,
+                logits=logits,
+                past_key_values=outputs.past_key_values,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+                router_logits=outputs.router_logits,
+                alpha=alpha,
+                lam=lam,
+            )
 
 
 @add_start_docstrings(

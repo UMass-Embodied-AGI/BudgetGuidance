@@ -108,7 +108,11 @@ def main(script_args, training_args, model_args, my_args):
     ################
     # Load datasets
     ################
-    dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
+    dataset = load_dataset(
+        script_args.dataset_name,
+        name=script_args.dataset_config,
+        cache_dir="./data_cache",
+    )
     train_dataset = dataset[script_args.dataset_train_split]
 
     ################

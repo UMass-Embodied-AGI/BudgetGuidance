@@ -5,7 +5,7 @@ done
 
 echo "g:   ${g:=8}"
 
-export job_name=granite-ctrl-llm
+export job_name=agentic_workflow
 
 bsub \
     -J $job_name \
@@ -14,6 +14,7 @@ bsub \
     -n 1 \
     -Is \
     -M 512G \
+    -G grp_inference_scaling \
     -W 60:00 \
         bash
     #-q standard \
