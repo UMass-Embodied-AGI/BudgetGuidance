@@ -15,8 +15,8 @@ from accelerate import (
 from accelerate.utils import get_max_memory
 from huggingface_hub import HfApi
 from packaging import version
-from peft import PeftModel
-from peft import __version__ as PEFT_VERSION
+# from peft import PeftModel
+# from peft import __version__ as PEFT_VERSION
 from tqdm import tqdm
 from transformers.models.auto.modeling_auto import (
     MODEL_FOR_CAUSAL_LM_MAPPING_NAMES,
@@ -584,13 +584,23 @@ class HFLM(TemplateLM):
                 self._model = o1.from_pretrained(pretrained, tokenizer=None, num_parallel_steps=num_parallel_steps, step_eos=step_eos, think_eos=think_eos, answer_eos=answer_eos).cuda()
             else:
                 print("not use o1 inference")
-                self._model = self.AUTO_MODEL_CLASS.from_pretrained(
-                    pretrained,
-                    revision=revision,
-                    torch_dtype=get_dtype(dtype),
-                    trust_remote_code=trust_remote_code,
-                    **model_kwargs,
-                )
+                if "fused" in pretrained.lower():
+                    from .qwen3_moe_fused.modular_qwen3_moe_fused import Qwen3MoeFusedForCausalLM
+                    self._model = Qwen3MoeFusedForCausalLM.from_pretrained(
+                        pretrained,
+                        revision=revision,
+                        torch_dtype=get_dtype(dtype),
+                        trust_remote_code=trust_remote_code,
+                        **model_kwargs,
+                    )
+                else:
+                    self._model = self.AUTO_MODEL_CLASS.from_pretrained(
+                        pretrained,
+                        revision=revision,
+                        torch_dtype=get_dtype(dtype),
+                        trust_remote_code=trust_remote_code,
+                        **model_kwargs,
+                    )
         else:
             try:
                 from auto_gptq import AutoGPTQForCausalLM
@@ -873,7 +883,7 @@ class HFLM(TemplateLM):
         
         self.model.tokenizer = self.tokenizer
         # streamer = TextStreamer(self.tokenizer, skip_prompt=True)
-        return self.model.generate(
+        xx = self.model.generate(
             input_ids=context,
             max_length=max_length,
             stopping_criteria=stopping_criteria,
@@ -882,6 +892,7 @@ class HFLM(TemplateLM):
             # streamer=streamer,
             **generation_kwargs,
         )
+        return xx
 
     def _select_cont_toks(
         self, logits: torch.Tensor, contlen: int = None, inplen: int = None

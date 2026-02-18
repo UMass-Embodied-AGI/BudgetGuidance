@@ -1,4 +1,11 @@
 data_cache/
+3rdparty/transformers_moe/
+test_qwen_moe/
+qwen3_moe_fused/
+profile/
+*.json
+*.jsonl
+bv_output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
